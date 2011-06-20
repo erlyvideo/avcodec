@@ -1,6 +1,6 @@
 -module(av_decoder).
 
--export([init/2, decode/2]).
+-export([init/2, decode/2, async_decode/2]).
 
 -define(CMD_INIT, 1).
 
@@ -15,10 +15,13 @@ init(CodecName, Options) ->
   DecoderConfig = proplists:get_value(decoder_config, Options),
   <<"ok">> = port_control(Decoder, ?CMD_INIT, DecoderConfig),
   {ok, Decoder}.
-  
+
+
+async_decode(Decoder, Frame) when is_binary(Frame) ->
+  port_command(Decoder, Frame).
 
 decode(Decoder, Frame) ->
-  port_command(Decoder, Frame),
+  async_decode(Decoder, Frame),
   receive
     {yuv, Decoder, YUV} -> {ok, YUV};
     {yuv, Decoder} -> ok
