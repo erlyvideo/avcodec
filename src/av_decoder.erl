@@ -8,6 +8,7 @@ init(CodecName, Options) ->
   case erl_ddll:load_driver(code:lib_dir(avcodec,ebin), av_decoder_drv) of
   	ok -> ok;
   	{error, already_loaded} -> ok;
+  	{error, permanent} -> ok;
   	{error, Error} -> error_logger:error_msg("Can't load AV Decoder: ~p~n", [erl_ddll:format_error(Error)])
   end,
   Decoder = open_port({spawn, av_decoder_drv}, [binary]),
