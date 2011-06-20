@@ -1,6 +1,6 @@
 
 -module(avcodec_sup).
-
+-include("log.hrl").
 -behaviour(supervisor).
 
 %% API

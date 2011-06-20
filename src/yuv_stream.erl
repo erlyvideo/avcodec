@@ -3,6 +3,7 @@
 -define(SERVER, ?MODULE).
 
 -include_lib("erlmedia/include/video_frame.hrl").
+-include("log.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -36,6 +37,7 @@ start_link(Host, Name, Consumer) ->
 %% ------------------------------------------------------------------
 
 init([Host, Name, Consumer]) ->
+  erlang:monitor(process, Consumer),
   {ok, Media} = media_provider:play(Host, Name, [{stream_id, 1}]),
   {ok, #yuv{host = Host, name = Name, consumer = Consumer, media = Media}}.
 
@@ -65,6 +67,9 @@ handle_info({yuv, Decoder, YUV}, #yuv{decoder = Decoder, consumer = Consumer} = 
 
 handle_info({yuv, Decoder}, #yuv{decoder = Decoder} = State) ->
   {noreply, State};
+
+handle_info({'DOWN', _Ref, process, _Consumer, _Reason}, State) ->
+  {stop, normal, State};
 
 handle_info(_Info, State) ->
   {noreply, State}.

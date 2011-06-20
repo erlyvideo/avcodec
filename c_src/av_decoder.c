@@ -249,6 +249,7 @@ static void av_decoder_decoded(ErlDrvData drv_data, ErlDrvThreadData thread_data
       ERL_DRV_TUPLE, 3
     };
     driver_output_term(decoder->port, reply, sizeof(reply) / sizeof(reply[0]));
+    driver_free_binary(frame->yuv);
   } else {
     ErlDrvTermData reply[] = {
       ERL_DRV_ATOM, driver_mk_atom("yuv"),
