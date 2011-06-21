@@ -10,6 +10,7 @@
 %% ------------------------------------------------------------------
 
 -export([start_link/3]).
+-export([info/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -32,6 +33,9 @@
 start_link(Host, Name, Consumer) ->
   gen_server:start_link(?MODULE, [Host, Name, Consumer], []).
 
+info(Stream) ->
+  gen_server:call(Stream, info).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -40,6 +44,12 @@ init([Host, Name, Consumer]) ->
   erlang:monitor(process, Consumer),
   {ok, Media} = media_provider:play(Host, Name, [{stream_id, 1}]),
   {ok, #yuv{host = Host, name = Name, consumer = Consumer, media = Media}}.
+
+handle_call(info, _From, #yuv{decoder = undefined} = State) ->
+  {reply, [], State};
+
+handle_call(info, _From, #yuv{decoder = Decoder} = State) ->
+  {reply, av_decoder:info(Decoder), State};
 
 handle_call(_Request, _From, State) ->
   {noreply, ok, State}.

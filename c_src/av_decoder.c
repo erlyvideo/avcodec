@@ -6,7 +6,7 @@
 
 enum {
     CMD_INIT = 1,
-    CMD_ACTIVE_ONCE = 2
+    CMD_INFO = 2
     };
 
 typedef struct {
@@ -128,6 +128,14 @@ static int av_decoder_drv_command(ErlDrvData handle, unsigned int command, char 
       memcpy(*rbuf, "ok", 2);
       return 2;
     }
+    
+    case CMD_INFO: {
+      uint32_t *out = (uint32_t *)*rbuf;
+      out[0] = d->dec ? htonl(d->dec->width) : 0;
+      out[1] = d->dec ? htonl(d->dec->width) : 0;
+      out[2] = htonl(d->total_time);
+      return 3*4;
+    }
     break;
     default:
     return 0;
@@ -197,10 +205,10 @@ static void av_async_decode(void *async_data) {
         sws_scale(handle->scale_ctx, (const uint8_t **)decoded->data, decoded->linesize, 0, height, plane, stride);
         // This strange copy-scale is required to get planar yuv array.
 
-        struct timeval tv2;
-        gettimeofday(&tv2, NULL);
-        handle->total_time += (tv2.tv_sec * 1000 + tv2.tv_usec / 1000) - (tv1.tv_sec * 1000 + tv1.tv_usec / 1000);
     }
+    struct timeval tv2;
+    gettimeofday(&tv2, NULL);
+    handle->total_time += (tv2.tv_sec * 1000 + tv2.tv_usec / 1000) - (tv1.tv_sec * 1000 + tv1.tv_usec / 1000);
     // fprintf(stderr, "Frame %d -> %d (%d, %d)\r\n", frame->h264->orig_size, frame_ready, driver_binary_get_refc(frame->h264), driver_binary_get_refc(frame->yuv));
     driver_free_binary(frame->h264);
     av_free(decoded);
