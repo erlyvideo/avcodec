@@ -13,9 +13,9 @@ init(CodecName, Options) ->
   	{error, Error} -> error_logger:error_msg("Can't load AV Decoder: ~p~n", [erl_ddll:format_error(Error)])
   end,
   Decoder = open_port({spawn, av_decoder_drv}, [binary]),
-  CodecName = h264,
   DecoderConfig = proplists:get_value(decoder_config, Options),
-  <<"ok">> = port_control(Decoder, ?CMD_INIT, DecoderConfig),
+  CodecBin = list_to_binary(lists:flatten(io_lib:format("~.4s", [CodecName]))),
+  <<"ok">> = port_control(Decoder, ?CMD_INIT, <<CodecBin:4/binary, DecoderConfig/binary>>),
   {ok, Decoder}.
 
 

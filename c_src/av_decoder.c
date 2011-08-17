@@ -36,7 +36,11 @@ static int av_decoder_init()
 
 AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_config_len)
 {
-    char decoder_name[] = "h264";
+    char decoder_name[10];
+    bzero(decoder_name, sizeof(decoder_name));
+    memcpy(decoder_name, decoder_config, 4);
+    decoder_config += 4;
+    decoder_config_len -= 4;
     AVCodec *decoder = avcodec_find_decoder_by_name(decoder_name);
     // av_vaapi, av_vdpau
     
@@ -132,7 +136,7 @@ static int av_decoder_drv_command(ErlDrvData handle, unsigned int command, char 
     case CMD_INFO: {
       uint32_t *out = (uint32_t *)*rbuf;
       out[0] = d->dec ? htonl(d->dec->width) : 0;
-      out[1] = d->dec ? htonl(d->dec->width) : 0;
+      out[1] = d->dec ? htonl(d->dec->height) : 0;
       out[2] = htonl(d->total_time);
       return 3*4;
     }
@@ -156,7 +160,7 @@ static void av_async_decode(void *async_data) {
 
     decoded = avcodec_alloc_frame();
     AVPacket avpkt;
-    avpkt.data = frame->h264->orig_bytes;
+    avpkt.data = (uint8_t *)frame->h264->orig_bytes;
     avpkt.size = frame->h264->orig_size;
     // uint32_t len1 = ntohl(*(uint32_t *)frame->data);
     // fprintf(stderr, "Still decoding %p %u, %d: <<", avpkt.data, len1, avpkt.size);
@@ -166,7 +170,9 @@ static void av_async_decode(void *async_data) {
     len = avcodec_decode_video2(handle->dec, decoded, &frame_ready, &avpkt);
     
     if(len == -1) {
-        // fprintf(stderr, "Failed to decode\r\n");
+      av_free(decoded);
+      av_exit(handle);
+      return;
     } else if(len != frame->h264->orig_size) {
         // fprintf(stderr, "Consumed not all: %d/%d\r\n", len, frame->h264->orig_size);
     }
