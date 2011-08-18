@@ -33,7 +33,10 @@ decode(Decoder, Frame) ->
     1000 -> erlang:error(av_timeout)
   end.
 
-
+info(undefined) ->
+  ok;
+info({ok,Decoder}) ->
+ info(Decoder);
 info(Decoder) ->
   <<Width:32, Height:32, TotalTime:32>> = port_control(Decoder, ?CMD_INFO, <<>>),
   [{width,Width},{height,Height},{time,TotalTime}].
