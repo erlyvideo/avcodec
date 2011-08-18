@@ -1,1 +1,1 @@
--define(D(X), io:format("~p:~p ~p~n", [?MODULE, ?LINE, X])).
+-define(D(X), io:format("DEBUG ~p:~p ~240p~n",[?MODULE, ?LINE, X])).
