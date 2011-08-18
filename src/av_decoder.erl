@@ -1,5 +1,5 @@
 -module(av_decoder).
-
+-include("log.hrl").
 -export([init/2, decode/2, async_decode/2, info/1]).
 
 -define(CMD_INIT, 1).
@@ -19,14 +19,16 @@ init(CodecName, Options) ->
   {ok, Decoder}.
 
 
+async_decode({ok,Decoder}, Frame) when is_binary(Frame) ->
+  port_command(Decoder, Frame);
 async_decode(Decoder, Frame) when is_binary(Frame) ->
   port_command(Decoder, Frame).
 
 decode(Decoder, Frame) ->
   async_decode(Decoder, Frame),
   receive
-    {yuv, Decoder, YUV} -> {ok, YUV};
-    {yuv, Decoder} -> ok
+    {yuv, _Decoder, YUV} -> YUV;
+    {yuv, _Decoder} -> ok
   after
     1000 -> erlang:error(av_timeout)
   end.
