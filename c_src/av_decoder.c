@@ -50,6 +50,10 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
     }
 
     AVCodecContext *dec = avcodec_alloc_context2(AVMEDIA_TYPE_VIDEO);
+    memcpy(&dec->width,decoder_config,sizeof(dec->width));   
+    memcpy(&dec->height,decoder_config+sizeof(dec->width),sizeof(dec->height));
+    decoder_config += 8;
+    decoder_config_len -= 8;
     dec->lowres = 0;   
     // dec->idct_algo = FF_IDCT_LIBMPEG2MMX;   
     // dec->flags2 |= CODEC_FLAG2_CHUNKS;   
