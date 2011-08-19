@@ -37,27 +37,37 @@ static int av_decoder_init()
 AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_config_len)
 {
     char decoder_name[10];
-    int config_size;
+    int config_size,i;
+    AVCodecContext *dec;
     bzero(decoder_name, sizeof(decoder_name));
     memcpy(decoder_name, decoder_config, 4);
     decoder_config += 4;
     decoder_config_len -= 4;
-    AVCodec *decoder = avcodec_find_decoder_by_name(decoder_name);
     // av_vaapi, av_vdpau
-    
+    if (!strcmp(decoder_name,"wmv3")){
+      dec = avcodec_alloc_context2(AVMEDIA_TYPE_VIDEO);
+      memcpy(&config_size,decoder_config,sizeof(config_size));
+      decoder_config += 4;
+      decoder_config_len -=4;  
+      memcpy(&dec->width,decoder_config,sizeof(dec->width));   
+      memcpy(&dec->height,decoder_config+sizeof(dec->width),sizeof(dec->height));
+      decoder_config += config_size;
+      decoder_config_len -= config_size;
+    } else if(!strcmp(decoder_name,"wmav")){
+      dec = avcodec_alloc_context2(AVMEDIA_TYPE_AUDIO);
+      bzero(decoder_name, sizeof(decoder_name));
+      memcpy(decoder_name,decoder_config-4,5);
+      decoder_config++; decoder_config_len--;
+      memcpy(&dec->channels,decoder_config,sizeof(dec->channels));
+      memcpy(&dec->bit_rate,decoder_config+=sizeof(dec->channels),sizeof(dec->bit_rate));
+      memcpy(&dec->bit_rate,decoder_config+=sizeof(dec->bit_rate),sizeof(dec->sample_rate));
+      decoder_config+=sizeof(dec->sample_rate);decoder_config_len-=sizeof(dec->sample_rate) + sizeof(dec->bit_rate) + sizeof(dec->channels);
+    };
+    AVCodec *decoder = avcodec_find_decoder_by_name(decoder_name);
     if(!decoder) {
-        fprintf(stderr, "Can't open decoder %s\r\n", decoder_name);
-        return NULL;
-    }
-
-    AVCodecContext *dec = avcodec_alloc_context2(AVMEDIA_TYPE_VIDEO);
-    memcpy(&config_size,decoder_config,sizeof(config_size));
-    decoder_config += 4;
-    decoder_config_len -=4;  
-    memcpy(&dec->width,decoder_config,sizeof(dec->width));   
-    memcpy(&dec->height,decoder_config+sizeof(dec->width),sizeof(dec->height));
-    decoder_config += config_size;
-    decoder_config_len -= config_size;
+      fprintf(stderr, "Can't find decoder %s\r\n", decoder_name);
+      return NULL;
+    };
     dec->lowres = 0;   
     // dec->idct_algo = FF_IDCT_LIBMPEG2MMX;   
     // dec->flags2 |= CODEC_FLAG2_CHUNKS;   
@@ -67,10 +77,15 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
     dec->skip_loop_filter = AVDISCARD_DEFAULT;
     // dec->error_resilience = FF_ER_CAREFUL;   
     // dec->error_concealment = 3;  
-    
     dec->extradata_size = decoder_config_len;
     dec->extradata = (uint8_t *)malloc(dec->extradata_size);
+    dec->bit_rate = 32048;
+    dec->sample_rate = 44100;
+    dec->channels = 1;
     memcpy(dec->extradata, (const char *)decoder_config, dec->extradata_size);
+    printf("Payload: \n");
+    for(i=0;i<dec->extradata_size;i++)
+      printf("%i, ",(int)dec->extradata[i]);
 
     // fprintf(stderr, "Got %u bytes of config: <<", dec->extradata_size);
     // 
@@ -84,7 +99,7 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
         free(dec->extradata);
         dec->extradata = NULL;
         av_free(dec);
-        fprintf(stderr, "Can't open decoder\r\n");
+        fprintf(stderr, "Can't open decoder %i\r\n");
         return NULL;
     }
     return dec;    
@@ -182,7 +197,7 @@ static void av_async_decode(void *async_data) {
       av_exit(handle);
       return;
     } else if(len != frame->h264->orig_size) {
-        // fprintf(stderr, "Consumed not all: %d/%d\r\n", len, frame->h264->orig_size);
+         fprintf(stderr, "Consumed not all: %d/%d\r\n", len, frame->h264->orig_size);
     }
     
     if(frame_ready) {
@@ -190,7 +205,7 @@ static void av_async_decode(void *async_data) {
         int height = handle->dec->height;
             
         if(!handle->scale_ctx) {
-            // fprintf(stderr, "Started stream from camera %dx%d\r\n", width, height);
+             fprintf(stderr, "Started stream from camera %dx%d\r\n", width, height);
             handle->scale_ctx = sws_getContext(
               width, height, PIX_FMT_YUV420P, 
               width, height, PIX_FMT_YUV420P, 
