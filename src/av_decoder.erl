@@ -14,8 +14,11 @@ init(CodecName, Options) ->
   end,
   Decoder = open_port({spawn, av_decoder_drv}, [binary]),
   DecoderConfig = proplists:get_value(decoder_config, Options),
-  CodecBin = list_to_binary(lists:flatten(io_lib:format("~.4s", [CodecName]))),
-  <<"ok">> = port_control(Decoder, ?CMD_INIT, <<CodecBin:4/binary, DecoderConfig/binary>>),
+%  CodecBin = list_to_binary(lists:flatten(io_lib:format("~.4s", [CodecName]))),
+  CodecBin = atom_to_binary(CodecName,latin1),
+  SizeCodecBin = size(CodecBin),
+  ?D(SizeCodecBin),
+  <<"ok">> = port_control(Decoder, ?CMD_INIT, <<CodecBin:SizeCodecBin/binary, DecoderConfig/binary>>),
   {ok, Decoder}.
 
 
