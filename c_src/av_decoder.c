@@ -4,6 +4,7 @@
 #include <libswscale/swscale.h>
 #include <sys/time.h>
 
+
 enum {
     CMD_INIT = 1,
     CMD_INFO = 2
@@ -22,6 +23,7 @@ typedef struct {
   H264Decoder *decoder;
   ErlDrvBinary *h264;
   ErlDrvBinary *yuv;
+  ErlDrvBinary *sample;
 } H264Frame;
 
 static unsigned int av_decoder_key = 0;
@@ -60,9 +62,10 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
       decoder_config++; decoder_config_len--;
       memcpy(&dec->channels,decoder_config,sizeof(dec->channels));
       memcpy(&dec->bit_rate,decoder_config+=sizeof(dec->channels),sizeof(dec->bit_rate));
-      memcpy(&dec->bit_rate,decoder_config+=sizeof(dec->bit_rate),sizeof(dec->sample_rate));
+      memcpy(&dec->sample_rate,decoder_config+=sizeof(dec->bit_rate),sizeof(dec->sample_rate));
       decoder_config+=sizeof(dec->sample_rate);decoder_config_len-=sizeof(dec->sample_rate) + sizeof(dec->bit_rate) + sizeof(dec->channels);
     };
+    printf("PARAMS: %i %i %i",dec->bit_rate,dec->sample_rate,dec->channels);
     AVCodec *decoder = avcodec_find_decoder_by_name(decoder_name);
     if(!decoder) {
       fprintf(stderr, "Can't find decoder %s\r\n", decoder_name);
@@ -70,6 +73,7 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
     };
     dec->lowres = 0;   
     // dec->idct_algo = FF_IDCT_LIBMPEG2MMX;   
+
     // dec->flags2 |= CODEC_FLAG2_CHUNKS;   
     dec->debug |= FF_DEBUG_STARTCODE;
     dec->skip_frame = AVDISCARD_DEFAULT;   
@@ -79,14 +83,11 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
     // dec->error_concealment = 3;  
     dec->extradata_size = decoder_config_len;
     dec->extradata = (uint8_t *)malloc(dec->extradata_size);
-    dec->bit_rate = 32048;
-    dec->sample_rate = 44100;
-    dec->channels = 1;
+    dec->rc_buffer_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
     memcpy(dec->extradata, (const char *)decoder_config, dec->extradata_size);
-    printf("Payload: \n");
+    av_log(dec,AV_LOG_ERROR,"Payload: \n");
     for(i=0;i<dec->extradata_size;i++)
-      printf("%i, ",(int)dec->extradata[i]);
-
+      av_log(dec,AV_LOG_ERROR,"%i, ",(int)dec->extradata[i]);
     // fprintf(stderr, "Got %u bytes of config: <<", dec->extradata_size);
     // 
     // uint32_t i;
@@ -95,13 +96,20 @@ AVCodecContext *new_software_decoder(uint8_t *decoder_config, uint32_t decoder_c
     //  fprintf(stderr, "%d", ((unsigned char*)dec->extradata)[i]);
     // }
     // fprintf(stderr, ">>\r\n");
+    //    decoder->decode = wma_decode_frame;
     if(avcodec_open(dec, decoder) < 0) {
         free(dec->extradata);
         dec->extradata = NULL;
         av_free(dec);
         fprintf(stderr, "Can't open decoder %i\r\n");
         return NULL;
-    }
+    };
+    /*uint8_t *dump;
+    dump = malloc(sizeof(dec));
+    memcpy(dump,dec,sizeof(dec));
+    avcodec(dec,AV_LOG_WARNING,"INIT:: ");
+    for (i=0;i<sizeof(dec);i++)
+    avcodec(dec,AV_LOG_WARNING,"%i, ",dump[i]);*/
     return dec;    
 }
 
@@ -175,35 +183,51 @@ static void av_async_decode(void *async_data) {
     struct timeval tv1;
     gettimeofday(&tv1, NULL);
     H264Frame *frame = (H264Frame *)async_data;
-    
     H264Decoder *handle = frame->decoder;
-    
-    int frame_ready = 0, len;
+    AVCodecContext *avctx = handle->dec;
+    AVCodec *codec = avctx->codec;
+    int *audio_decoded = &frame->h264->orig_size;
+    int frame_ready = 0, len,i;
     AVFrame *decoded;
-
+    int16_t *outbuf=NULL;
+    int size_out=0;
     decoded = avcodec_alloc_frame();
     AVPacket avpkt;
     avpkt.data = (uint8_t *)frame->h264->orig_bytes;
     avpkt.size = frame->h264->orig_size;
+    //    av_log(avctx,AV_LOG_INFO,"AAAAAAAAAAAAAAAAAAAAAAAAAa %i ",avpkt.size);
+  
     // uint32_t len1 = ntohl(*(uint32_t *)frame->data);
     // fprintf(stderr, "Still decoding %p %u, %d: <<", avpkt.data, len1, avpkt.size);
     // int i;
     // for( i = 0; i< 10; i++) fprintf(stderr, "%s%d", i == 0 ? "" : ",", frame->data[i]);
     // fprintf(stderr, ">>\r\n");
-    len = avcodec_decode_video2(handle->dec, decoded, &frame_ready, &avpkt);
-    
+    if(codec->type == 1){
+      fprintf(stderr,"Audio!!! %i",avpkt.size);
+      size_out = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+      outbuf=av_malloc(AVCODEC_MAX_AUDIO_FRAME_SIZE*2);
+      av_log(avctx,AV_LOG_ERROR,"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA %i",avpkt.size);
+      len = avcodec_decode_audio3(handle->dec, outbuf, &size_out,&avpkt);  
+      fprintf(stderr,"Audio!!!End %i",size_out);
+    }
+    else {
+      av_log(avctx,AV_LOG_ERROR,"VVVVVVVVVVVVVVVVVVVVVVV %i",avpkt.size);
+      len = avcodec_decode_video2(handle->dec, decoded, &frame_ready, &avpkt);  
+    };
+    //fprintf(stderr,"OriginSize1 %i",avpkt.size);
     if(len == -1) {
       av_free(decoded);
-      av_exit(handle);
+      //      av_exit(handle);
+      av_log(avctx,AV_LOG_ERROR,"ERROR %i %i",avpkt.size,codec->type);
       return;
     } else if(len != frame->h264->orig_size) {
-         fprintf(stderr, "Consumed not all: %d/%d\r\n", len, frame->h264->orig_size);
+       fprintf(stderr, "Consumed not all: %d/%d\r\n", len, frame->h264->orig_size);
     }
-    
     if(frame_ready) {
         int width = handle->dec->width;
         int height = handle->dec->height;
-            
+
+	//        av_log(handle->dec,AV_LOG_INFO,"SCALE_CTX %d",len);
         if(!handle->scale_ctx) {
              fprintf(stderr, "Started stream from camera %dx%d\r\n", width, height);
             handle->scale_ctx = sws_getContext(
@@ -211,30 +235,21 @@ static void av_async_decode(void *async_data) {
               width, height, PIX_FMT_YUV420P, 
               SWS_FAST_BILINEAR, NULL, NULL, NULL
             );
-        }
-        
-        
-        
+        }        
         int stride_size = width*height;
         frame->yuv = driver_alloc_binary(stride_size*3/2);
-        
-        uint8_t *yuv_data = (uint8_t *)frame->yuv->orig_bytes;
-        
+        uint8_t *yuv_data = (uint8_t *)frame->yuv->orig_bytes;        
         uint8_t *plane[4] = {yuv_data, yuv_data+stride_size, yuv_data+stride_size+stride_size/4, NULL};
         int stride[4] = {width, width/2, width/2, 0};
-        
-        
-        // for(i = 0; i < handle->dec->height; i++) {
-        //     memcpy(y.data + handle->dec->width*i, decoded->data[0] + decoded->linesize[0]*i, handle->dec->width);
-        // }
-        // for(i = 0; i < handle->dec->height/2; i++) {
-        //     memcpy(u.data + handle->dec->width/2*i, decoded->data[1] + decoded->linesize[1]*i, handle->dec->width/2);
-        //     memcpy(v.data + handle->dec->width/2*i, decoded->data[2] + decoded->linesize[2]*i, handle->dec->width/2);
-        // }
         sws_scale(handle->scale_ctx, (const uint8_t **)decoded->data, decoded->linesize, 0, height, plane, stride);
         // This strange copy-scale is required to get planar yuv array.
-
     }
+    else {
+      frame->sample = driver_alloc_binary(size_out);    
+      memcpy(frame->sample->orig_bytes,outbuf,size_out);
+      frame->sample->orig_size = size_out;
+      av_free(outbuf);
+    };
     struct timeval tv2;
     gettimeofday(&tv2, NULL);
     handle->total_time += (tv2.tv_sec * 1000 + tv2.tv_usec / 1000) - (tv1.tv_sec * 1000 + tv1.tv_usec / 1000);
@@ -248,6 +263,7 @@ static void av_async_decode(void *async_data) {
 static void av_decoder_schedule_decode(ErlDrvData drv_data, ErlIOVec *ev)
 {
   H264Decoder* d = (H264Decoder*)drv_data;
+  //  av_log(d->dec,AV_LOG_WARNING,"\nVSIZE:: %i\n");
   ErlDrvBinary *h264 = NULL;
   int i;
   for(i = 0; i < ev->vsize; i++) {
@@ -257,13 +273,16 @@ static void av_decoder_schedule_decode(ErlDrvData drv_data, ErlIOVec *ev)
     }
     if(ev->binv[i]) h264 = ev->binv[i];
   }
+    av_log(d->dec,AV_LOG_ERROR,"ErlIOVec %i : %i",ev->vsize,i);
   if(!h264) {
     driver_failure_atom(d->port, "invalid_output_vector");
     return;
   }
+  av_log(d->dec,AV_LOG_ERROR,"\nSIZE_OF_STRUCTURE::%i\n",sizeof(H264Frame));
   H264Frame *frame = driver_alloc(sizeof(H264Frame));
   bzero(frame, sizeof(H264Frame));
   frame->h264 = h264;
+  // av_log(NULL,AV_LOG_INFO,"Size:: %i ",h264->orig_size);
   frame->decoder = d;
   driver_binary_inc_refc(h264);
   // I must change driver_free for other, more clever clearer, because yuv field must be also freed.
@@ -279,6 +298,7 @@ static void av_decoder_decoded(ErlDrvData drv_data, ErlDrvThreadData thread_data
   // fprintf(stderr, "Decoding finished: %p %ld\r\n", frame->yuv, frame->yuv ? frame->yuv->orig_size : -1);
   
   if(frame->yuv) {
+    av_log(NULL,AV_LOG_WARNING,"\nPORTyuv:: %i\n",decoder->port);
     ErlDrvTermData reply[] = {
       ERL_DRV_ATOM, driver_mk_atom("yuv"),
       ERL_DRV_PORT, driver_mk_port(decoder->port),
@@ -287,7 +307,19 @@ static void av_decoder_decoded(ErlDrvData drv_data, ErlDrvThreadData thread_data
     };
     driver_output_term(decoder->port, reply, sizeof(reply) / sizeof(reply[0]));
     driver_free_binary(frame->yuv);
+  } else if(frame->sample){
+    av_log(NULL,AV_LOG_WARNING,"\nPORTsample:: %i\n",decoder->port);
+    ErlDrvTermData reply[] = {
+      ERL_DRV_ATOM, driver_mk_atom("sample"),
+      ERL_DRV_PORT, driver_mk_port(decoder->port),
+      ERL_DRV_BINARY, (ErlDrvTermData)frame->sample, (ErlDrvTermData)frame->sample->orig_size, 0,
+      ERL_DRV_TUPLE, 3
+    };
+    driver_output_term(decoder->port, reply, sizeof(reply) / sizeof(reply[0]));
+    driver_free_binary(frame->sample);
   } else {
+    //    av_log(decoder->dec,AV_LOG_ERROR,"NOT YUV");
+    av_log(NULL,AV_LOG_WARNING,"\nPORTelse:: %i\n",decoder->port);
     ErlDrvTermData reply[] = {
       ERL_DRV_ATOM, driver_mk_atom("yuv"),
       ERL_DRV_PORT, driver_mk_port(decoder->port),
