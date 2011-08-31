@@ -13,12 +13,12 @@ init(CodecName, Options) ->
   	{error, Error} -> error_logger:error_msg("Can't load AV Decoder: ~p~n", [erl_ddll:format_error(Error)])
   end,
   Decoder = open_port({spawn, av_decoder_drv}, [binary]),
-  ?D(Decoder),
+%  ?D(Decoder),
   DecoderConfig = proplists:get_value(decoder_config, Options),
 %  CodecBin = list_to_binary(lists:flatten(io_lib:format("~.4s", [CodecName]))),
   CodecBin = atom_to_binary(CodecName,latin1),
   SizeCodecBin = size(CodecBin),
-  ?D(SizeCodecBin),
+%  ?D(SizeCodecBin),
   <<"ok">> = port_control(Decoder, ?CMD_INIT, <<CodecBin:SizeCodecBin/binary, DecoderConfig/binary>>),
   {ok, Decoder}.
 
@@ -31,9 +31,10 @@ async_decode(Decoder, Frame) when is_binary(Frame) ->
 decode(Decoder, Frame) ->
   async_decode(Decoder, Frame),
   receive
-    {yuv, _Decoder, YUV} -> ?D(size(YUV)),YUV;
+    {yuv, _Decoder, YUV} -> ?D({"YUVSize: ",size(YUV)}),YUV;
     {yuv, _Decoder} -> ok;
-    {sample,_Decoder,Sample} -> ?D({size(Sample),"AAAA"}),Sample;
+    {sample,_Decoder,Sample} -> ?D({"SampleSize: ",size(Sample)}),
+Sample;
     Else -> ?D(Else),ok
   after
     10000 -> erlang:error(av_timeout)
